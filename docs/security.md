@@ -78,12 +78,7 @@ Each component in the system is protected by a dedicated security group with tig
 
 ## Security Group Relationships (Traffic Flow)
 
-```mermaid
-graph TD
-    User -->|HTTP/HTTPS| ALB[Application Load Balancer]
-    ALB -->|Forward| Agent[Jenkins Agent (UAT/Prod)]
-    Master[Jenkins Master] -->|SSH| Agent
-```
+
 
 This ensures clear, auditable traffic paths with no lateral or uncontrolled access.
 
