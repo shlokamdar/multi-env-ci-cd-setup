@@ -8,7 +8,7 @@ To design and implement a **branch-based CI/CD pipeline** using Jenkins that dep
 ---
 
 ## Components Used
-![Architecture Diagram](diagrams/architecture.png)
+![Architecture Diagram](../diagrams/architecture.png)
 - AWS VPC
 - Jenkins Master (EC2)
 - Jenkins Agent – UAT (EC2)
