@@ -1,0 +1,35 @@
+- name: Install Nginx and configure CloudWatch Agent
+  hosts: cloudwatch
+  become: true
+  gather_facts: true
+
+  vars:
+    cw_agent_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+  tasks:
+
+    - name: Update yum cache
+      yum:
+        update_cache: yes
+
+
+    - name: Install Amazon CloudWatch Agent
+      yum:
+        name: amazon-cloudwatch-agent
+        state: present
+
+    - name: Copy CloudWatch Agent configuration
+      copy:
+        src: cloudwatch-agent-config.json
+        dest: "{{ cw_agent_config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Start CloudWatch Agent using config file
+      command: >
+        /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+        -a fetch-config
+        -m ec2
+        -c file:{{ cw_agent_config_path }}
+        -s
