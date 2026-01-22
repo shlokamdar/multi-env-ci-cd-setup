@@ -478,7 +478,7 @@ To validate the complete pipeline after integrating networking, security, SSL, a
 - HTTPS enabled
 - Metrics visible in CloudWatch
 
-![Successfully Fetched Logs](../diagrams/cloudwatch.png)
+![Successfully Fetched Logs](../diagrams/cloud-watch.png)
 
 
 ## 12. Final Outcome
