@@ -1,28 +1,32 @@
-This section documents the end-to-end infrastructure and CI/CD setup process, starting from network creation to Jenkins-based deployments across UAT and Production environments.
+# Step-by-Step Implementation
 
-The goal is to demonstrate how each AWS and DevOps component is provisioned, configured, and connected, ensuring environment isolation, deployment safety, and operational clarity.
+This section documents the end-to-end design and implementation of the infrastructure and CI/CD pipeline, starting from foundational network setup to fully automated Jenkins-based deployments across UAT and Production environments.
 
-# 1. Setting up a VPC
+The objective is to clearly demonstrate how each AWS and DevOps component is provisioned, configured, and interconnected, while emphasizing environment isolation, deployment safety, automation, and operational clarity. Each step builds upon the previous one to reflect a real-world, production-aligned workflow.
+
+## 1. Setting Up the Virtual Private Cloud (VPC)
 
 **Purpose**
 
-To create a secure and isolated AWS network that hosts all CI/CD and application components, enabling controlled access and scalability.
+To establish a secure, isolated, and scalable network foundation for hosting all CI/CD, application, and monitoring components.
 
 **Actions Performed**
 
-- Created a custom VPC
-- Configured public subnets for:
-    - Bastion/Master node, Jenkins Agents, Load Balancer
-- Configured route tables and internet gateway
-- Applied security groups for SSH, HTTP, and Jenkins access
+- Created a custom VPC to logically isolate project resources
+- Configured public subnets to host:
+    - Jenkins Master / Bastion Host
+    - Jenkins Agents (UAT and Production)
+    - Application Load Balancer
+- Configured route tables and attached an Internet Gateway to enable controlled external access
+- Applied security groups to regulate SSH, HTTP, HTTPS, and Jenkins traffic
 
-![VPC architecture diagram](../diagrams/vpc-resource-map.png)
+![VPC Architecture Diagram](../diagrams/vpc-resource-map.png)
 
-# 2. Setting Up Compute Components (EC2 Instances)
+## 2. Setting Up Compute Components (EC2 Instances)
 
 **Purpose**
 
-To provision dedicated compute resources for Jenkins orchestration, environment-specific deployments, and monitoring.
+To provision dedicated compute resources for CI/CD orchestration, environment-specific application deployments, and monitoring—ensuring clear separation of responsibilities.
 
 **Instances Launched**
 
@@ -30,18 +34,23 @@ To provision dedicated compute resources for Jenkins orchestration, environment-
 - Jenkins Agent – UAT
 - Jenkins Agent – Production
 
-![EC2 instances list](../diagrams/ec2-isntances.png)
+Each instance was assigned a specific role to avoid resource contention and ensure predictable behavior across environments.
 
-# 3. Bastion/Jenkins Master node
+![EC2 Instances List](../diagrams/ec2-isntances.png)
+
+## 3. Bastion / Jenkins Master Node
 
 **Role**
 
-This node acts as:
+The Jenkins Master node serves a dual purpose:
+- **Jenkins Master**: responsible for pipeline orchestration, multibranch indexing, and credential management
+- **Ansible Control Node**: responsible for centralized configuration management and monitoring setup
 
-- **Jenkins Master** for CI/CD orchestration
-- **Ansible Control Node** for configuration management and monitoring setup
+This design ensures that control logic is separated from execution logic, improving scalability and security.
 
-### **Jenkins Installation**
+### Jenkins Installation
+
+Jenkins was installed on the master node using the official Jenkins repository.
 
 ```bash
 # Add Jenkins repository
@@ -61,13 +70,22 @@ sudo systemctl start jenkins
 sudo systemctl status jenkins
 ```
 
-Verify it on `<public-ip>:8080`
+Jenkins was verified by accessing: `http://<public-ip>:8080`
 
 ![Jenkins UI](../diagrams/jenkins-ui.png)
 
-### **Ansible Installation & Configuration**
+### Ansible Installation & Configuration
 
-**Purpose —** To centrally manage Jenkins agents and install required services (Nginx, Git, monitoring tools)
+**Purpose**
+
+To enable automated, repeatable configuration management for Jenkins agents, application dependencies, and monitoring components.
+
+**Actions Performed**
+
+- Created a dedicated ansible user
+- Enabled passwordless sudo for automation
+- Configured SSH access
+- Installed Ansible on the master node
 
 ```bash
 #!/bin/bash
@@ -99,21 +117,30 @@ systemctl restart sshd
 sudo dnf install ansible -y
 ```
 
-- Generated SSH keys on master
-- Copied keys to agent nodes
-- Enabled passwordless SSH access
+**SSH Configuration**
+
+- Generated SSH keys on the master node
+- Copied public keys to all agent nodes
+- Enabled passwordless SSH access for Ansible operations
 
 ```bash
 ssh-keygen
 ssh-copy-id ansible@<agent-ip>
-# Manually ssh into slaves to set ansible password but that can be added in the setup script as well
 ```
 
-### Ansible playbook to install prerequisites
+*Manual password setup was performed initially and can be fully automated in future iterations.*
 
-- Nginx - webservers
-- Git
-- Java - Jenkins dependency
+### Ansible Playbook: Installing Prerequisites
+
+**Purpose**
+
+To standardize the runtime environment across all Jenkins agents and eliminate manual dependency management.
+
+**Components Installed**
+
+- **Java**: Required for Jenkins agent remoting
+- **Nginx**: Web server for application hosting
+- **Git**: Source code management
 
 ```yaml
 - name: Install and configure Nginx, Git, and Java on web servers
@@ -145,111 +172,89 @@ ssh-copy-id ansible@<agent-ip>
 
 ![Ansible Playbook Execution Output](../diagrams/ansible-playbook-success.png)
 
-# 4. Jenkins Agent – Production Environment
+## 4. Jenkins Agent – Production Environment
 
 **Role**
 
-- Handles deployments triggered from the `main` branch
-- Hosts production-grade Nginx application
-- Connected to Application Load Balancer
-- Integrated with monitoring stack
+- Executes deployments triggered from the `main` branch
+- Hosts the production Nginx application
+- Receives traffic via the Application Load Balancer
+- Integrated with CloudWatch for monitoring
 
-# 5. Jenkins Agent – UAT Environment
+This agent represents the production execution layer of the CI/CD pipeline.
+
+## 5. Jenkins Agent – UAT Environment
 
 **Role**
 
-- Handles deployments triggered from the `develop` branch
-- Used for testing and validation before production
-- Isolated from production infrastructure
+- Executes deployments triggered from the `develop` branch
+- Used for validation and testing prior to production releases
+- Fully isolated from production infrastructure
 
-# 6. Security Groups Configured
+This separation ensures safe testing without production impact.
 
-**Objective -**
-
-To enforce **least-privilege network access** by explicitly controlling inbound traffic between the Jenkins master, agents, load balancer, and public users—while preventing unnecessary exposure of internal components.
-
-### **Jenkins Master/ Bastion Security Group**
-
-**Purpose -** Allows administrative access and CI/CD orchestration while restricting Jenkins UI access to trusted sources.
-
-| Protocol  | Port | Source |
-| --- | --- | --- |
-| SSH | 22 | My IP / Trusted IP |
-| Jenkins UI | 8080 | My IP |
-| HTTP (optional) | 80 | ALB Security Group |
-
-### Jenkins Agents - UAT Security Group & Production Security Group
-
-Allows Jenkins master to trigger builds and deploy artifacts while exposing the application only via the load balancer.
-
-| Rule Name | Port | Source |
-| --- | --- | --- |
-| SSH | 22 | Jenkins Master SG |
-| HTTP | 80 | ALB Security Group |
-| HTTPS  | 443  | ALB Security Group |
-
-### Application Load Balancer Security Group
-
-Allows public HTTP access while acting as the **only public-facing entry point** to the application.
-
-| Rule Name | Port | Source |
-| --- | --- | --- |
-| HTTP | 80 | 0.0.0.0/0 |
-| HTTPS | 443 | 0.0.0.0/0 |
-
-# 7. Application Load Balancer Setup
+## 6. Security Groups Configuration
 
 **Objective**
 
-To distribute incoming HTTP traffic across environment-specific EC2 instances while enabling high availability, fault tolerance, and clean separation between UAT and Production environments.
+To enforce least-privilege network access by tightly controlling traffic between Jenkins components, application servers, and end users—while preventing unnecessary public exposure.
 
-### Target Group Configuration
+**Jenkins Master / Bastion Security Group**
 
-Target groups define **where the ALB forwards traffic** and allow environment-level separation.
+| Protocol | Port | Source |
+| :--- | :--- | :--- |
+| SSH | 22 | Trusted IP |
+| Jenkins UI | 8080 | Trusted IP |
+| HTTP (optional) | 80 | ALB Security Group |
 
-**Target Groups Created:**
+**Jenkins Agent Security Groups (UAT & Production)**
+
+| Protocol | Port | Source |
+| :--- | :--- | :--- |
+| SSH | 22 | Jenkins Master SG |
+| HTTP | 80 | ALB Security Group |
+| HTTPS | 443 | ALB Security Group |
+
+**Application Load Balancer Security Group**
+
+| Protocol | Port | Source |
+| :--- | :--- | :--- |
+| HTTP | 80 | 0.0.0.0/0 |
+| HTTPS | 443 | 0.0.0.0/0 |
+
+## 7. Application Load Balancer Setup
+
+**Objective**
+
+To provide a single, highly available entry point for application traffic while maintaining clean separation between UAT and Production environments.
+
+**Target Groups**
 
 | Target Group | Environment | Protocol | Port | Health Check |
-| --- | --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- | :--- |
 | `tg-uat` | UAT | HTTP | 80 | `/` |
 | `tg-prod` | Production | HTTP | 80 | `/` |
-- Targets registered: Respective EC2 instance (Jenkins agents)
-- Health checks ensure traffic is sent only to healthy nodes
 
-### Application Load Balancer (ALB)
+Health checks ensure traffic is routed only to healthy instances.
 
-Created two ALBs - one for production and one for UAT with same configuration just different TG
+**Load Balancer Configuration**
 
-**Configuration**
+- Internet-facing ALB
+- Public subnets
+- HTTP and HTTPS listeners
+- Environment-specific target group forwarding
 
-- Type: Application Load Balancer
-- Scheme: Internet-facing
-- Listener: HTTP (Port 80)
-- Security Group: ALB Security Group
-- Subnets: Public Subnets
+## 8. Jenkins Setup & GitHub Integration for CI/CD
 
-**Listener Rules**
+**Objective**
 
-| Listener Port | Action | Target Group |
-| --- | --- | --- |
-| 80 | Forward | UAT or Production TG |
-| 443  | Forward | UAT or Production TG |
+To configure Jenkins as a central CI/CD orchestration platform, integrate it with GitHub as the source control system, register environment-specific Jenkins agents, and implement a multibranch pipeline that enables automated deployments to UAT and Production based on Git branch strategy.
 
-# Jenkins Setup & GitHub Integration for CI/CD
+**Accessing Jenkins**
 
-**Objective -**
+Jenkins was exposed on the Jenkins Master EC2 instance using its public IP and default Jenkins port: `http://<JENKINS_PUBLIC_IP>:8080`
 
-To configure Jenkins as a **central CI/CD orchestrator**, integrate it with GitHub as the source control system, register environment-specific build agents, and validate end-to-end pipeline execution using a **multi-branch pipeline strategy**.
-
-**Accessing Jenkins -**
-
-Jenkins was exposed on the Jenkins Master EC2 instance using its public IP.
-
-Jenkins URL —
-
-```
-http://<JENKINS_PUBLIC_IP>:8080
-```
+### Initial Jenkins Setup
 
 **Initial Admin Password Retrieval**
 
@@ -258,28 +263,26 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
 This password was used to:
-
-- Unlock Jenkins
-- Install recommended plugins
-- Create the initial admin user
-
-![Jenkins UI](../diagrams/jenkins-ui.png)
+- Unlock Jenkins for the first time
+- Install recommended Jenkins plugins
+- Create the initial administrative user
+- Configure basic Jenkins settings
 
 ### Jenkins–GitHub Integration
 
 **Objective**
 
-To allow Jenkins to automatically pull source code from a **single GitHub repository** containing multiple branches for different environments.
+To allow Jenkins to securely pull source code from a single GitHub repository containing multiple branches representing different environments.
 
 **Configuration Steps**
 
-Manage Jenkins → Credentials → Add Credentials
-
-- Generated a **GitHub Personal Access Token (PAT)**
-- Added GitHub credentials in Jenkins:
-    - Type: Secret Text
-    - Scope: Global
-- Configured GitHub repository in Jenkins
+1. Navigate to: **Manage Jenkins → Credentials → Add Credentials**
+2. Create a GitHub Personal Access Token (PAT) in GitHub with repository access
+3. Add credentials in Jenkins with the following configuration:
+    - **Kind**: Secret Text
+    - **Scope**: Global
+    - **Secret**: GitHub PAT
+4. Save credentials and associate them with the pipeline configuration
 
 ![Configuring GitHub](../diagrams/configuring-github.png)
 
@@ -287,18 +290,210 @@ Manage Jenkins → Credentials → Add Credentials
 
 **Objective**
 
-To offload builds and deployments to **dedicated environment-specific agents**, ensuring isolation between UAT and Production.
+To offload builds and deployments to dedicated Jenkins agents, ensuring environment isolation and preventing production workloads from being affected by UAT activities.
 
-**Nodes configured**
+**Nodes Configured**
 
 | Node Name | Environment | Label |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `slave-uat` | UAT | `uat-slave` |
 | `slave-prod` | Production | `prod-slave` |
 
+**Steps Performed**
+
+1. Navigate to: **Manage Jenkins → Nodes → Add Node**
+2. Configure nodes with:
+    - SSH launch method
+    - Agent-specific labels
+    - Dedicated workspace directories
+3. Verified successful SSH connection and agent registration
+
 ![List of Nodes](../diagrams/list-of-nodes.png)
 
-**Steps taken:**
+### Multibranch Pipeline Configuration
 
-Manage Jenkins → Nodes→ Add Node
+**Objective**
+
+To enable branch-based CI/CD automation using a single `Jenkinsfile` that dynamically deploys to the correct environment based on the Git branch.
+
+**Pipeline Creation**
+
+1. Navigate to: **Jenkins Dashboard → New Item**
+2. Select: **Multibranch Pipeline**
+3. Configure:
+    - **Source**: GitHub
+    - **Repository URL**
+    - **Credentials**: GitHub PAT
+    - **Branch discovery enabled**
+
+**Branch Discovery & Indexing**
+
+After configuration, Jenkins automatically indexed the repository and detected available branches (`develop`, `main`). Each branch triggered its own pipeline execution using the same `Jenkinsfile`.
+
+### Jenkinsfile Design & Execution Logic
+
+**Branch-to-Environment Mapping**
+
+| Git Branch | Environment | Jenkins Agent |
+| :--- | :--- | :--- |
+| `develop` | UAT | `uat-slave` |
+| `main` | Production | `prod-slave` |
+
+This mapping was implemented using conditional `when` expressions inside the `Jenkinsfile`.
+
+**Pipeline Stages**
+
+The `Jenkinsfile` was structured into the following stages, where each stage executes only for the appropriate environment:
+
+1. **Checkout**: Retrieves source code from GitHub and determines the active branch.
+2. **Install Dependencies**: Installs Node.js dependencies using `npm ci`.
+3. **Build**: Builds the application artifacts.
+4. **Deploy**: Deploys build output to the Nginx web directory and serves the application.
+
+**Environment-Specific Deployments**
+
+*   **UAT Deployment (develop branch)**
+    *   Triggered automatically on push to `develop`
+    *   Executed on `uat-slave` agent
+    *   Application deployed to UAT EC2 instance
+    *   Accessible via UAT domain
+
+*   **Production Deployment (main branch)**
+    *   Triggered automatically on push to `main`
+    *   Executed on `prod-slave` agent
+    *   Application deployed behind ALB and HTTPS
+    *   Metrics collected via CloudWatch
+
+![Multibranch Pipeline](../diagrams/success-mbp.png)
+
+### Agent Validation & Dependency Management
+
+**Validation Performed**
+
+- Verified agent connectivity in Jenkins dashboard
+- Confirmed agents reported **Online**
+- Verified workspace creation on each agent
+
+![Node Connection](../diagrams/success-node-connection.png)
+
+**Runtime Dependencies Installed on Agents**
+
+The following dependencies were installed via Ansible to ensure consistent pipeline execution:
+- **Java** (Jenkins remoting requirement)
+- **Node.js and npm** (application build)
+- **Git**
+- **Nginx**
+
+This eliminated environment drift and reduced deployment failures.
+
+**Failure Handling & Safety Mechanisms**
+
+- Pipeline execution halts on stage failure
+- Production deployment occurs only on successful builds
+- UAT and Production pipelines are fully isolated
+- No cross-environment deployment possible
+
+This design ensures deployment safety and predictability.
+
+## 9. Domain, DNS & SSL Configuration (ACM + Route 53)
+
+**Objective**
+
+To provide secure HTTPS access and custom domain-based routing for both UAT and Production environments.
+
+### SSL Certificate Setup (AWS ACM)
+
+**Purpose**
+
+To provision SSL/TLS certificates using AWS Certificate Manager for encrypted communication.
+
+**Actions Performed**
+
+- Requested public SSL certificates for `domain.in` and `uat.domain.in`
+- Selected DNS validation
+- Generated CNAME validation records
+
+### DNS Configuration (Route 53)
+
+**Purpose**
+
+To map custom domains to Application Load Balancers.
+
+**Actions Performed**
+
+- Created Route 53 hosted zone
+- Added alias records pointing to ALBs
+- Validated DNS propagation
+
+### HTTPS Listener Configuration
+
+- Added HTTPS listener on port 443
+- Attached ACM certificate
+- Forwarded traffic to respective target groups
+
+**Outcome**
+
+- HTTPS enabled
+- Custom domains configured
+- SSL certificates managed automatically
+
+## 10. Monitoring Setup (CloudWatch – Production Only)
+
+**Objective**
+
+To monitor production system health while keeping UAT lightweight and cost-efficient.
+
+**Monitoring Strategy**
+
+- CloudWatch enabled only on Production
+- Metrics collected at OS and application level
+
+**CloudWatch Agent Installation**
+
+- Installed CloudWatch Agent via Ansible
+- Applied custom configuration
+- Started agent service
+
+**Metrics Collected**
+
+- CPU utilization
+- Memory usage
+- Disk usage
+- Nginx process metrics
+
+**Monitoring Design Decision**
+
+Monitoring was intentionally limited to Production to maximize observability where it matters most while minimizing noise and cost in UAT.
+
+## 11. End-to-End CI/CD Validation
+
+**Objective**
+
+To validate the complete pipeline after integrating networking, security, SSL, and monitoring.
+
+**Validation Scenarios**
+
+- Push to `develop` -> UAT deployment successful
+- Push to `main` -> Production deployment successful
+- HTTPS enabled
+- Metrics visible in CloudWatch
+
+![Successful Pipeline](../diagrams/success-mbp.png)
+
+## 12. Final Outcome
+
+- Branch-based CI/CD pipeline implemented
+- Environment isolation via dedicated Jenkins agents
+- Secure HTTPS access using ACM and Route 53
+- Fully automated configuration via Ansible
+- Production-grade monitoring enabled
+
+## 13. Future Enhancements
+
+- Blue-Green or Canary deployments
+- HTTP -> HTTPS enforcement
+- Jenkins notifications (Slack / Email)
+- Automated rollback on failures
+- Auto-scaling for application layer
+
 
