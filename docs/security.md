@@ -78,7 +78,7 @@ Each component in the system is protected by a dedicated security group with tig
 
 ## Security Group Relationships (Traffic Flow)
 
-
+![Security Group Relationships](../diagrams/security-group-relationships.png)
 
 This ensures clear, auditable traffic paths with no lateral or uncontrolled access.
 
