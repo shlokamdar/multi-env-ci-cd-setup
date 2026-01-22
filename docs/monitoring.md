@@ -19,5 +19,4 @@ To monitor Production infrastructure health while avoiding unnecessary overhead 
 - CloudWatch Agent installed only on Production node
 - Automated via Ansible
 
-📸 **Placeholder: CloudWatch Metrics**
 
