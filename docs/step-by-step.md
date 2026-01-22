@@ -478,7 +478,8 @@ To validate the complete pipeline after integrating networking, security, SSL, a
 - HTTPS enabled
 - Metrics visible in CloudWatch
 
-![Successful Pipeline](../diagrams/success-mbp.png)
+![Successfully Fetched Logs](../diagrams/cloudwatch.png)
+
 
 ## 12. Final Outcome
 
@@ -488,12 +489,5 @@ To validate the complete pipeline after integrating networking, security, SSL, a
 - Fully automated configuration via Ansible
 - Production-grade monitoring enabled
 
-## 13. Future Enhancements
-
-- Blue-Green or Canary deployments
-- HTTP -> HTTPS enforcement
-- Jenkins notifications (Slack / Email)
-- Automated rollback on failures
-- Auto-scaling for application layer
 
 
